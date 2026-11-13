@@ -1,0 +1,7 @@
+.vercel/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.DS_Store
+data/all_cex_klines.json
