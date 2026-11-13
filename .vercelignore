@@ -1,0 +1,5 @@
+data/
+*.py
+README.md
+.git/
+__pycache__/
