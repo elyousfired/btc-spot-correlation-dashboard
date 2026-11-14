@@ -154,10 +154,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <section class="grid grid-cols-1 xl:grid-cols-12 gap-5">
       <div class="xl:col-span-6 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm flex flex-col">
         <div class="mb-3">
-          <h2 class="text-base font-semibold text-[var(--foreground)]">Top 25 Tokens by Win Rate %</h2>
-          <p class="text-xs text-[var(--muted-foreground)]">Click any bar to audit every BTC trigger day for that token</p>
+          <h2 class="text-base font-semibold text-[var(--foreground)]">All Tokens Ranked by Win Rate %</h2>
+          <p id="winBarSub" class="text-xs text-[var(--muted-foreground)]">Scroll to view all tokens; click any bar to audit every BTC trigger day</p>
         </div>
-        <canvas id="winBarCanvas" class="w-full h-[540px] cursor-pointer"></canvas>
+        <div id="winBarContainer" class="h-[540px] overflow-y-auto pr-2 space-y-1 tabular-nums"></div>
       </div>
 
       <!-- Event-by-Event Audit Panel -->
@@ -451,62 +451,43 @@ function renderKPIs(filtered) {
 }
 
 function renderBarChart(filtered) {
-  const canvas = document.getElementById('winBarCanvas');
-  const h = 540;
-  const { ctx, w } = setupCanvas(canvas, h);
-  const theme = getThemeColors();
-  ctx.clearRect(0, 0, w, h);
+  const container = document.getElementById('winBarContainer');
+  if (!container) return;
 
-  const top25 = [...filtered]
-    .sort((a, b) => (b.winRate - a.winRate) || (b.wins - a.wins) || (b.avgMove - a.avgMove))
-    .slice(0, 25);
+  const ranked = [...filtered].sort((a, b) => (b.winRate - a.winRate) || (b.wins - a.wins) || (b.avgMove - a.avgMove));
+  document.getElementById('winBarSub').textContent = `Showing all ${ranked.length} qualifying tokens (scroll to browse; click any bar to audit)`;
 
-  if (!top25.length) return;
+  if (!ranked.length) {
+    container.innerHTML = '<div class="text-xs text-[var(--muted-foreground)] py-8 text-center">No tokens match filters</div>';
+    return;
+  }
   if (!state.selectedSymbol || !filtered.some(r => r.symbol === state.selectedSymbol)) {
-    state.selectedSymbol = top25[0].symbol;
+    state.selectedSymbol = ranked[0].symbol;
   }
 
-  const padL = 82, padR = 115, padT = 10, padB = 22;
-  const plotW = w - padL - padR, plotH = h - padT - padB;
-  const maxRate = Math.max(50, ...top25.map(r => r.winRate));
-  const xOf = v => padL + (v / maxRate) * plotW;
-
-  ctx.font = '12px sans-serif';
-  [0, 25, 50, 75, 100].filter(t => t <= maxRate + 5).forEach(t => {
-    const x = xOf(t);
-    ctx.strokeStyle = theme.border; ctx.lineWidth = 0.6;
-    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
-    ctx.fillStyle = theme.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(t + '%', x, padT + plotH + 4);
-  });
-
-  state.barHitBoxes = [];
-  const step = plotH / top25.length;
-  const barH = Math.min(15, step * 0.68);
-
-  top25.forEach((r, idx) => {
-    const cy = padT + idx * step + step / 2;
-    const bw = Math.max(3, xOf(r.winRate) - padL);
+  const maxRate = Math.max(50, ...ranked.map(r => r.winRate));
+  container.innerHTML = ranked.map((r, idx) => {
+    const pct = Math.min(100, Math.max(2, (r.winRate / maxRate) * 100));
     const isSel = r.symbol === state.selectedSymbol;
+    const barColor = r.winRate >= 50 ? 'bg-emerald-500' : r.winRate >= 30 ? 'bg-blue-500' : 'bg-amber-500';
+    const rowBg = isSel ? 'bg-blue-500/20 border-blue-500/40' : 'hover:bg-[var(--secondary)]/50 border-transparent';
 
-    if (isSel) {
-      ctx.fillStyle = theme.isLight ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.20)';
-      ctx.fillRect(4, cy - step / 2 + 1, w - 8, step - 2);
-    }
+    return `<div data-symbol="${r.symbol}" class="flex items-center gap-2 px-2 py-1 rounded border ${rowBg} cursor-pointer text-xs">
+      <span class="w-9 text-right text-[var(--muted-foreground)] shrink-0">#${idx + 1}</span>
+      <span class="w-20 font-semibold truncate ${isSel ? 'text-blue-400' : 'text-[var(--foreground)]'} shrink-0" title="${r.name}">${r.symbol}</span>
+      <div class="flex-1 h-3.5 bg-[var(--background)] rounded overflow-hidden">
+        <div class="${barColor} h-full rounded" style="width:${pct.toFixed(1)}%"></div>
+      </div>
+      <span class="w-24 text-right font-medium text-[var(--foreground)] shrink-0">${r.winRate.toFixed(1)}% (${r.wins}/${r.tot})</span>
+    </div>`;
+  }).join('');
 
-    ctx.fillStyle = r.winRate >= 50 ? '#10b981' : r.winRate >= 30 ? '#3b82f6' : '#f59e0b';
-    ctx.beginPath(); ctx.roundRect(padL, cy - barH / 2, bw, barH, 3); ctx.fill();
-
-    ctx.fillStyle = isSel ? '#3b82f6' : theme.fg;
-    ctx.font = (isSel ? 'bold ' : '') + '12px sans-serif';
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.fillText(r.symbol, padL - 8, cy);
-
-    ctx.fillStyle = theme.fg;
-    ctx.textAlign = 'left';
-    ctx.fillText(`${r.winRate.toFixed(1)}% (${r.wins}/${r.tot})`, padL + bw + 6, cy);
-
-    state.barHitBoxes.push({ y1: cy - step / 2, y2: cy + step / 2, symbol: r.symbol });
+  container.querySelectorAll('[data-symbol]').forEach(el => {
+    el.onclick = () => {
+      state.selectedSymbol = el.getAttribute('data-symbol');
+      const f = getFiltered();
+      renderBarChart(f); renderTable(f); renderAuditPanel();
+    };
   });
 }
 
@@ -679,17 +660,6 @@ function initUI() {
       renderTable(getFiltered());
     };
   });
-
-  document.getElementById('winBarCanvas').onclick = e => {
-    const rect = e.target.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const hit = state.barHitBoxes.find(b => y >= b.y1 && y <= b.y2);
-    if (hit) {
-      state.selectedSymbol = hit.symbol;
-      const f = getFiltered();
-      renderBarChart(f); renderTable(f); renderAuditPanel();
-    }
-  };
 
   window.onresize = () => renderAll();
 }

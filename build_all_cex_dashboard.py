@@ -148,17 +148,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="xl:col-span-7 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm flex flex-col">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
           <div>
-            <h2 class="text-base font-semibold text-[var(--foreground)]">Extremes Leaderboard (Click Bar to Inspect)</h2>
-            <p class="text-xs text-[var(--muted-foreground)]">Top 18 tokens by selected ranking mode</p>
+            <h2 class="text-base font-semibold text-[var(--foreground)]">Full Ranked Leaderboard (Click Any Bar to Inspect)</h2>
+            <p id="leaderboardSub" class="text-xs text-[var(--muted-foreground)]">All filtered tokens ranked by selected mode</p>
           </div>
           <select id="rankModeSelect" class="px-3 py-1.5 rounded-lg text-xs bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)]">
-            <option value="HIGHEST_CORR">Top 18 Most Correlated</option>
-            <option value="LOWEST_CORR">Top 18 Least Correlated / Negative</option>
-            <option value="HIGHEST_BETA">Top 18 Highest Beta (&beta;)</option>
-            <option value="TOP_RETURN">Top 18 Period Return %</option>
+            <option value="HIGHEST_CORR">All Tokens: Most Correlated</option>
+            <option value="LOWEST_CORR">All Tokens: Least Correlated / Negative</option>
+            <option value="HIGHEST_BETA">All Tokens: Highest Beta (&beta;)</option>
+            <option value="TOP_RETURN">All Tokens: Period Return %</option>
           </select>
         </div>
-        <canvas id="barCanvas" class="w-full h-[390px] cursor-pointer"></canvas>
+        <div id="barListContainer" class="h-[390px] overflow-y-auto pr-2 space-y-1 tabular-nums"></div>
       </div>
     </section>
 
@@ -586,11 +586,8 @@ function renderHistogram(alts) {
 }
 
 function renderBarChart(alts) {
-  const canvas = document.getElementById('barCanvas');
-  const h = 390;
-  const { ctx, w } = setupCanvas(canvas, h);
-  const theme = getThemeColors();
-  ctx.clearRect(0, 0, w, h);
+  const container = document.getElementById('barListContainer');
+  if (!container) return;
 
   let subset = [...alts];
   let modeVal = r => r.activeCorr ?? 0;
@@ -609,53 +606,42 @@ function renderBarChart(alts) {
     modeVal = r => r.periodReturnPct;
     fmtFn = fmtPct;
   }
-  const rows = subset.slice(0, 18);
-  if (!rows.length) return;
 
-  const vals = rows.map(modeVal);
-  const minV = Math.min(0, ...vals);
-  const maxV = Math.max(0.2, ...vals);
-  const padL = 78, padR = 66, padT = 10, padB = 22;
-  const plotW = w - padL - padR, plotH = h - padT - padB;
-  const xOf = v => padL + ((v - minV) / Math.max(1e-6, maxV - minV)) * plotW;
-  const zeroX = xOf(0);
+  document.getElementById('leaderboardSub').textContent = `Showing all ${subset.length} filtered tokens (scroll to browse)`;
+  if (!subset.length) {
+    container.innerHTML = '<div class="text-xs text-[var(--muted-foreground)] py-8 text-center">No tokens match filters</div>';
+    return;
+  }
 
-  ctx.strokeStyle = theme.border;
-  ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.moveTo(zeroX, padT); ctx.lineTo(zeroX, padT + plotH); ctx.stroke();
+  const maxAbs = Math.max(0.2, ...subset.map(r => Math.abs(modeVal(r))));
 
-  state.barHitBoxes = [];
-  const step = plotH / rows.length;
-  const barH = Math.min(15, step * 0.68);
-
-  rows.forEach((r, idx) => {
-    const cy = padT + idx * step + step / 2;
+  container.innerHTML = subset.map((r, idx) => {
     const v = modeVal(r);
-    const x0 = Math.min(zeroX, xOf(v));
-    const bw = Math.max(2, Math.abs(xOf(v) - zeroX));
+    const pct = Math.min(100, Math.max(2, (Math.abs(v) / maxAbs) * 100));
     const isSel = r.symbol === state.selectedSymbol;
+    const barColor = v < 0 ? 'bg-rose-500' : state.rankMode === 'LOWEST_CORR' ? 'bg-amber-500' : 'bg-emerald-500';
+    const rowBg = isSel ? 'bg-blue-500/20 border-blue-500/40' : 'hover:bg-[var(--secondary)]/50 border-transparent';
+    const valColor = v < 0 ? 'text-rose-400' : 'text-[var(--foreground)]';
 
-    if (isSel) {
-      ctx.fillStyle = theme.isLight ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.20)';
-      ctx.fillRect(4, cy - step / 2 + 1, w - 8, step - 2);
-    }
+    return `<div data-symbol="${r.symbol}" class="flex items-center gap-2 px-2 py-1 rounded border ${rowBg} cursor-pointer text-xs">
+      <span class="w-9 text-right text-[var(--muted-foreground)] shrink-0">#${idx + 1}</span>
+      <span class="w-20 font-semibold truncate ${isSel ? 'text-blue-400' : 'text-[var(--foreground)]'} shrink-0" title="${r.name}">${r.symbol}</span>
+      <div class="flex-1 h-3.5 bg-[var(--background)] rounded overflow-hidden">
+        <div class="${barColor} h-full rounded" style="width:${pct.toFixed(1)}%"></div>
+      </div>
+      <span class="w-20 text-right font-medium ${valColor} shrink-0">${fmtFn(v)}</span>
+    </div>`;
+  }).join('');
 
-    ctx.fillStyle = v < 0 ? '#ef4444' : state.rankMode === 'LOWEST_CORR' ? '#f59e0b' : '#10b981';
-    ctx.beginPath();
-    ctx.roundRect(x0, cy - barH / 2, bw, barH, 3);
-    ctx.fill();
-
-    ctx.fillStyle = isSel ? '#3b82f6' : theme.fg;
-    ctx.font = (isSel ? 'bold ' : '') + '12px sans-serif';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(r.symbol, padL - 8, cy);
-
-    ctx.fillStyle = theme.fg;
-    ctx.textAlign = 'left';
-    ctx.fillText(fmtFn(v), Math.max(zeroX, xOf(v)) + 6, cy);
-
-    state.barHitBoxes.push({ y1: cy - step / 2, y2: cy + step / 2, symbol: r.symbol });
+  container.querySelectorAll('[data-symbol]').forEach(el => {
+    el.onclick = () => {
+      const sym = el.getAttribute('data-symbol');
+      state.selectedSymbol = sym;
+      document.getElementById('tokenSelect').value = sym;
+      renderBarChart(getFilteredAlts());
+      renderTable(getFilteredAlts());
+      renderDeepDive();
+    };
   });
 }
 
@@ -941,19 +927,6 @@ function initUI() {
       renderTable(getFilteredAlts());
     };
   });
-
-  document.getElementById('barCanvas').onclick = e => {
-    const rect = e.target.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const hit = state.barHitBoxes.find(b => y >= b.y1 && y <= b.y2);
-    if (hit) {
-      state.selectedSymbol = hit.symbol;
-      tokenSel.value = hit.symbol;
-      renderBarChart(getFilteredAlts());
-      renderTable(getFilteredAlts());
-      renderDeepDive();
-    }
-  };
 
   window.onresize = () => renderAll();
 }

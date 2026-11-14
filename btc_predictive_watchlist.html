@@ -106,8 +106,8 @@
       <div class="xl:col-span-8 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm">
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
           <div>
-            <h2 class="text-base font-semibold text-[var(--foreground)]">Top 20 Predicted Followers — Factor Score Breakdown (0–100)</h2>
-            <p class="text-xs text-[var(--muted-foreground)]">Stacked contribution of each quantitative signal</p>
+            <h2 class="text-base font-semibold text-[var(--foreground)]">All Predicted Followers — Factor Score Breakdown (0–100)</h2>
+            <p id="stackedSub" class="text-xs text-[var(--muted-foreground)]">Scroll to view stacked contribution across all filtered tokens</p>
           </div>
           <div class="flex flex-wrap items-center gap-3 text-xs text-[var(--muted-foreground)]">
             <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded bg-[#3b82f6]"></span>Full r (25)</span>
@@ -117,7 +117,7 @@
             <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded bg-[#a855f7]"></span>+5% Consist. (10)</span>
           </div>
         </div>
-        <canvas id="stackedCanvas" class="w-full h-[460px]"></canvas>
+        <div id="stackedContainer" class="h-[460px] overflow-y-auto pr-2 space-y-1 tabular-nums"></div>
       </div>
 
       <div class="xl:col-span-4 bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 shadow-sm flex flex-col justify-between space-y-4">
@@ -276,58 +276,30 @@ function renderKPIs(filtered) {
 }
 
 function renderStackedChart(filtered) {
-  const canvas = document.getElementById('stackedCanvas');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  const w = Math.max(320, rect.width || canvas.parentElement.clientWidth || 600);
-  const h = 460;
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const theme = getThemeColors();
-  ctx.clearRect(0, 0, w, h);
+  const container = document.getElementById('stackedContainer');
+  if (!container) return;
 
-  const top20 = [...filtered].sort((a, b) => b.score - a.score).slice(0, 20);
-  if (!top20.length) return;
+  const ranked = [...filtered].sort((a, b) => b.score - a.score);
+  document.getElementById('stackedSub').textContent = `Showing all ${ranked.length} filtered tokens (scroll to browse)`;
+  if (!ranked.length) {
+    container.innerHTML = '<div class="text-xs text-[var(--muted-foreground)] py-8 text-center">No tokens match filters</div>';
+    return;
+  }
 
-  const padL = 74, padR = 54, padT = 10, padB = 22;
-  const plotW = w - padL - padR, plotH = h - padT - padB;
-  const xOf = v => padL + (v / 100) * plotW;
-
-  ctx.font = '12px sans-serif';
-  [0, 25, 50, 75, 100].forEach(t => {
-    const x = xOf(t);
-    ctx.strokeStyle = theme.border; ctx.lineWidth = 0.6;
-    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + plotH); ctx.stroke();
-    ctx.fillStyle = theme.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(String(t), x, padT + plotH + 4);
-  });
-
-  const step = plotH / top20.length;
-  const barH = Math.min(15, step * 0.68);
-  const colors = ['#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#a855f7'];
-
-  top20.forEach((r, idx) => {
-    const cy = padT + idx * step + step / 2;
-    let curX = padL;
-    const parts = [r.sR, r.sR30, r.sW10, r.sUb, r.sW5];
-    parts.forEach((val, pIdx) => {
-      const pw = (val / 100) * plotW;
-      ctx.fillStyle = colors[pIdx];
-      ctx.fillRect(curX, cy - barH / 2, pw, barH);
-      curX += pw;
-    });
-
-    ctx.fillStyle = theme.fg;
-    ctx.font = 'bold 12px sans-serif';
-    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    ctx.fillText(r.symbol, padL - 8, cy);
-
-    ctx.font = '12px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillText(r.score.toFixed(1), curX + 6, cy);
-  });
+  container.innerHTML = ranked.map((r, idx) => {
+    return `<div class="flex items-center gap-2 px-2 py-1 rounded hover:bg-[var(--secondary)]/50 text-xs">
+      <span class="w-9 text-right text-[var(--muted-foreground)] shrink-0">#${idx + 1}</span>
+      <span class="w-20 font-semibold truncate text-[var(--foreground)] shrink-0" title="${r.name}">${r.symbol}</span>
+      <div class="flex-1 h-3.5 bg-[var(--background)] rounded overflow-hidden flex">
+        <div style="width:${r.sR.toFixed(2)}%;background:#3b82f6" title="Full r: ${r.sR.toFixed(1)}"></div>
+        <div style="width:${r.sR30.toFixed(2)}%;background:#06b6d4" title="30D r: ${r.sR30.toFixed(1)}"></div>
+        <div style="width:${r.sW10.toFixed(2)}%;background:#10b981" title="+10% Hit: ${r.sW10.toFixed(1)}"></div>
+        <div style="width:${r.sUb.toFixed(2)}%;background:#f59e0b" title="Up-Beta: ${r.sUb.toFixed(1)}"></div>
+        <div style="width:${r.sW5.toFixed(2)}%;background:#a855f7" title="+5% Consist: ${r.sW5.toFixed(1)}"></div>
+      </div>
+      <span class="w-12 text-right font-semibold text-emerald-400 shrink-0">${r.score.toFixed(1)}</span>
+    </div>`;
+  }).join('');
 }
 
 function renderTable(filtered) {
