@@ -91,6 +91,10 @@
           <input id="hideStableChk" type="checkbox" checked class="rounded" />
           <span>Hide Stablecoins</span>
         </label>
+        <label class="flex items-center gap-1.5 text-xs text-[var(--foreground)] cursor-pointer select-none" title="Exclude bStocks / xStocks tokenized equities">
+          <input id="hideStocksChk" type="checkbox" checked class="rounded" />
+          <span>Hide Tokenized Stocks</span>
+        </label>
         <span id="filterCountBadge" class="ml-auto text-xs font-medium text-[var(--muted-foreground)] tabular-nums"></span>
       </div>
     </header>
@@ -142,6 +146,7 @@
             <option value="HIGHEST_BETA">All Tokens: Highest Beta (&beta;)</option>
             <option value="TOP_RETURN">All Tokens: Period Return %</option>
             <option value="GAIN_PER_MCAP">All Tokens: Gain % / MCap ($M)</option>
+            <option value="EARLY_BULL_FLIP">All Tokens: Early Bull Flip (Gain/MCap Accel)</option>
             <option value="IMPLIED_CAP_GAIN">All Tokens: Implied Cap Gain ($)</option>
           </select>
         </div>
@@ -230,6 +235,8 @@
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="endPrice">Price (USDT)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="periodReturnPct">Return %</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="gainPerMcap" title="Period Return % divided by Market Cap in $M">Gain / MCap</th>
+              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="recentGainPerMcap" title="Recent 30D Return % divided by Market Cap in $M">30D G/MC</th>
+              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="gainMcapAccel" title="Recent 30D Gain/MCap minus Prior Gain/MCap (Early Bull Acceleration)">G/MC Accel</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="impliedCapGainUsd" title="Estimated USD Market Cap gained or lost over selected period">Cap Gain $</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="activeCorr" title="Full selected period starting 2026-07-01">Corr (01/07→Now)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="spearmanLog" title="Full selected period Spearman">Spearman (Full)</th>
@@ -380,6 +387,7 @@ let state = {
   cap: 'ALL',
   fullHistoryOnly: true,
   hideStable: true,
+  hideStocks: true,
   rankMode: 'HIGHEST_CORR',
   sortKey: 'activeCorr',
   sortDesc: true,
@@ -444,6 +452,14 @@ function recomputeAll() {
     const periodReturnPct = ((tokP[tokP.length - 1] - tokP[0]) / tokP[0]) * 100;
     const marketCap = (meta.market_cap && meta.market_cap > 0) ? meta.market_cap : null;
     const gainPerMcap = marketCap ? (periodReturnPct / (marketCap / 1e6)) : null;
+    const winN = tokP.length;
+    const splitIdx = Math.max(5, winN - Math.min(31, Math.floor(winN / 2)));
+    const priorRetPct = ((tokP[splitIdx] - tokP[0]) / tokP[0]) * 100;
+    const recentRetPct = ((tokP[winN - 1] - tokP[splitIdx]) / tokP[splitIdx]) * 100;
+    const priorGainPerMcap = marketCap ? (priorRetPct / (marketCap / 1e6)) : null;
+    const recentGainPerMcap = marketCap ? (recentRetPct / (marketCap / 1e6)) : null;
+    const gainMcapAccel = (recentGainPerMcap != null && priorGainPerMcap != null) ? (recentGainPerMcap - priorGainPerMcap) : null;
+    const isTokenizedStock = /tokenized stock|xstock|bstocks/i.test(meta.name || '');
     let lastFullPrice = null;
     for (let j = arr.length - 1; j >= 0; j--) {
       if (arr[j] != null && arr[j] > 0) { lastFullPrice = arr[j]; break; }
@@ -455,9 +471,15 @@ function recomputeAll() {
 
     rows.push({
       ...meta,
+      isTokenizedStock,
       mcapRank: meta.mcap_rank ?? 999999,
       marketCap,
       gainPerMcap,
+      priorRetPct,
+      recentRetPct,
+      priorGainPerMcap,
+      recentGainPerMcap,
+      gainMcapAccel,
       impliedCapGainUsd,
       nDays: tokP.length,
       fullHistory: tokP.length >= winDates.length - 2,
@@ -492,6 +514,7 @@ function getFilteredAlts() {
   return state.computedRows.filter(r => {
     if (r.symbol === 'BTC') return false;
     if (state.hideStable && r.is_stable) return false;
+    if (state.hideStocks && r.isTokenizedStock) return false;
     if (state.fullHistoryOnly && !r.fullHistory) return false;
     if (state.exchange === 'BINANCE' && !r.has_binance) return false;
     if (state.exchange === 'BYBIT' && !r.has_bybit) return false;
@@ -632,6 +655,11 @@ function renderBarChart(alts) {
     subset.sort((a, b) => b.gainPerMcap - a.gainPerMcap);
     modeVal = r => r.gainPerMcap;
     fmtFn = fmtGainMcap;
+  } else if (state.rankMode === 'EARLY_BULL_FLIP') {
+    subset = subset.filter(r => r.gainMcapAccel != null && r.recentRetPct > 0 && r.gainMcapAccel > 0);
+    subset.sort((a, b) => b.gainMcapAccel - a.gainMcapAccel);
+    modeVal = r => r.gainMcapAccel;
+    fmtFn = fmtGainMcap;
   } else if (state.rankMode === 'IMPLIED_CAP_GAIN') {
     subset = subset.filter(r => r.impliedCapGainUsd != null);
     subset.sort((a, b) => b.impliedCapGainUsd - a.impliedCapGainUsd);
@@ -641,6 +669,8 @@ function renderBarChart(alts) {
 
   document.getElementById('leaderboardSub').textContent = state.rankMode === 'GAIN_PER_MCAP'
     ? `Showing ${subset.length} tokens with known Market Cap (Period Return % / MCap $M)`
+    : state.rankMode === 'EARLY_BULL_FLIP'
+    ? `Showing ${subset.length} green-now tokens accelerating on Gain/MCap (Recent 30D vs Prior)`
     : state.rankMode === 'IMPLIED_CAP_GAIN'
     ? `Showing ${subset.length} tokens by estimated USD Cap Gain (${state.startDate} → ${state.endDate})`
     : `Showing all ${subset.length} filtered tokens (scroll to browse)`;
@@ -658,11 +688,14 @@ function renderBarChart(alts) {
     const barColor = v < 0 ? 'bg-rose-500'
       : state.rankMode === 'LOWEST_CORR' ? 'bg-amber-500'
       : state.rankMode === 'GAIN_PER_MCAP' ? 'bg-violet-500'
+      : state.rankMode === 'EARLY_BULL_FLIP' ? 'bg-fuchsia-500'
       : state.rankMode === 'IMPLIED_CAP_GAIN' ? 'bg-cyan-500'
       : 'bg-emerald-500';
     const rowBg = isSel ? 'bg-blue-500/20 border-blue-500/40' : 'hover:bg-[var(--secondary)]/50 border-transparent';
     const valColor = v < 0 ? 'text-rose-400' : 'text-[var(--foreground)]';
-    const subTag = (state.rankMode === 'GAIN_PER_MCAP' || state.rankMode === 'IMPLIED_CAP_GAIN')
+    const subTag = state.rankMode === 'EARLY_BULL_FLIP'
+      ? `<span class="w-44 text-right text-[11px] text-[var(--muted-foreground)] shrink-0">${fmtGainMcap(r.priorGainPerMcap).replace('%/M','')} → ${fmtGainMcap(r.recentGainPerMcap)} | ${fmtMcap(r.marketCap)}</span>`
+      : (state.rankMode === 'GAIN_PER_MCAP' || state.rankMode === 'IMPLIED_CAP_GAIN')
       ? `<span class="w-28 text-right text-[11px] text-[var(--muted-foreground)] shrink-0">${fmtPct(r.periodReturnPct)} / ${fmtMcap(r.marketCap)}</span>`
       : '';
 
@@ -734,6 +767,8 @@ function renderTable(alts) {
       <td class="py-2 px-2 text-right">${fmtPrice(r.endPrice)}</td>
       <td class="py-2 px-2 text-right ${retColor}">${fmtPct(r.periodReturnPct)}</td>
       <td class="py-2 px-2 text-right ${r.gainPerMcap != null && r.gainPerMcap > 0 ? 'text-violet-400 font-medium' : r.gainPerMcap != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtGainMcap(r.gainPerMcap)}</td>
+      <td class="py-2 px-2 text-right ${r.recentGainPerMcap != null && r.recentGainPerMcap > 0 ? 'text-emerald-400 font-medium' : r.recentGainPerMcap != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtGainMcap(r.recentGainPerMcap)}</td>
+      <td class="py-2 px-2 text-right ${r.gainMcapAccel != null && r.gainMcapAccel > 0 ? 'text-fuchsia-400 font-semibold' : r.gainMcapAccel != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtGainMcap(r.gainMcapAccel)}</td>
       <td class="py-2 px-2 text-right ${r.impliedCapGainUsd != null && r.impliedCapGainUsd > 0 ? 'text-cyan-400 font-medium' : r.impliedCapGainUsd != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtSignedUsd(r.impliedCapGainUsd)}</td>
       <td class="py-2 px-2 text-right ${isBtc ? '' : corrColor}">${fmtCorr(r.activeCorr)}</td>
       <td class="py-2 px-2 text-right">${fmtCorr(r.spearmanLog)}</td>
@@ -765,7 +800,7 @@ function renderDeepDive() {
 
   document.getElementById('deepDiveTitle').textContent = `Token Deep-Dive: BTC vs ${tok.symbol} (${tok.name})`;
   document.getElementById('deepDiveSub').textContent =
-    `${tok.exchanges.join(' · ')} | MCap=${fmtMcap(tok.marketCap)} | Gain/MCap=${fmtGainMcap(tok.gainPerMcap)} | CapGain=${fmtSignedUsd(tok.impliedCapGainUsd)} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Pearson r=${fmtCorr(tok.pearsonLog)} | Beta=${tok.beta?.toFixed(2) ?? '--'} | Ret: ${fmtPct(tok.periodReturnPct)}`;
+    `${tok.exchanges.join(' · ')} | MCap=${fmtMcap(tok.marketCap)} | Gain/MCap=${fmtGainMcap(tok.gainPerMcap)} | 30D G/MC=${fmtGainMcap(tok.recentGainPerMcap)} (Accel=${fmtGainMcap(tok.gainMcapAccel)}) | CapGain=${fmtSignedUsd(tok.impliedCapGainUsd)} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Pearson r=${fmtCorr(tok.pearsonLog)} | Beta=${tok.beta?.toFixed(2) ?? '--'} | Ret: ${fmtPct(tok.periodReturnPct)}`;
   document.getElementById('perfLegendToken').textContent = tok.symbol;
   document.getElementById('scatterStatsBadge').textContent = `β = ${tok.beta?.toFixed(2) ?? '--'} | R² = ${tok.rSquared != null ? (tok.rSquared * 100).toFixed(1) + '%' : '--'}`;
 
@@ -961,6 +996,7 @@ function initUI() {
   document.getElementById('capSelect').onchange = e => { state.cap = e.target.value; state.page = 1; renderAll(); };
   document.getElementById('fullHistoryChk').onchange = e => { state.fullHistoryOnly = e.target.checked; state.page = 1; renderAll(); };
   document.getElementById('hideStableChk').onchange = e => { state.hideStable = e.target.checked; state.page = 1; renderAll(); };
+  document.getElementById('hideStocksChk').onchange = e => { state.hideStocks = e.target.checked; state.page = 1; renderAll(); };
   document.getElementById('rankModeSelect').onchange = e => { state.rankMode = e.target.value; renderBarChart(getFilteredAlts()); };
   tokenSel.onchange = e => { state.selectedSymbol = e.target.value; renderBarChart(getFilteredAlts()); renderTable(getFilteredAlts()); renderDeepDive(); };
 
