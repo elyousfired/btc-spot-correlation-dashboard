@@ -9,10 +9,15 @@ import concurrent.futures
 import datetime
 import json
 import math
+import socket
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# Force IPv4 so external exchange/CoinGecko HTTPS calls never stall on Windows IPv6
+_orig_gai = socket.getaddrinfo
+socket.getaddrinfo = lambda h, p, f=0, t=0, pr=0, fl=0: _orig_gai(h, p, socket.AF_INET, t, pr, fl)
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
@@ -292,7 +297,7 @@ def round_sig(val: float, sig: int = 6) -> float:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--start", default="2026-07-01")
+    parser.add_argument("--start", default="2026-06-30")
     parser.add_argument("--workers", type=int, default=14)
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--include-perps", action="store_true", help="Include perpetual futures in addition to Spot")

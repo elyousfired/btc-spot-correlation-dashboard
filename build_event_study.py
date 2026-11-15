@@ -55,7 +55,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Event-Study Backtest</span>
           </div>
           <h1 class="text-xl md:text-2xl font-bold tracking-tight text-[var(--foreground)]">When BTC Pumps &ge; +2%, Which Tokens Hit &ge; +10%?</h1>
-          <p class="text-sm text-[var(--muted-foreground)] mt-1">Counts every BTC &ge; +X% day since July 1, 2026 and computes each Spot token&rsquo;s win rate (Wins / BTC Events), average move, and date-by-date hit log.</p>
+          <p class="text-sm text-[var(--muted-foreground)] mt-1">Counts every BTC &ge; +X% day since June 30, 2026 (BTC Bottom) and computes each Spot token&rsquo;s win rate (Wins / BTC Events), average move, and date-by-date hit log.</p>
         </div>
 
         <!-- Strategy Parameter Controls -->

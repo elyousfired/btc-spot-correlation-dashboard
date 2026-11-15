@@ -55,7 +55,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <span id="periodBadge" class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-[var(--primary)] text-[var(--primary-foreground)]"></span>
           </div>
           <h1 class="text-xl md:text-2xl font-bold tracking-tight text-[var(--foreground)]">BTC – Spot Market Correlation Screener (Binance &amp; Bybit Spot)</h1>
-          <p class="text-sm text-[var(--muted-foreground)] mt-1">All active USDT Spot pairs aligned by UTC daily closes from July 1, 2026. Zero futures/perps noise.</p>
+          <p class="text-sm text-[var(--muted-foreground)] mt-1">All active USDT Spot pairs aligned by UTC daily closes from June 30, 2026 (BTC Bottom). Zero futures/perps noise.</p>
         </div>
 
         <!-- Date & Metric Controls -->
@@ -76,7 +76,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
               <option value="spearmanLog">Spearman Rank (Log Returns)</option>
             </select>
           </div>
-          <button id="resetDateBtn" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-[var(--secondary)] text-[var(--secondary-foreground)] border border-[var(--border)] hover:opacity-90 cursor-pointer">Reset 01/07/2026</button>
+          <button id="resetDateBtn" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-[var(--secondary)] text-[var(--secondary-foreground)] border border-[var(--border)] hover:opacity-90 cursor-pointer">Reset 30/06/2026</button>
         </div>
       </div>
 
@@ -253,7 +253,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="recentGainPerMcap" title="Recent 30D Return % divided by Market Cap in $M">30D G/MC</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="gainMcapAccel" title="Recent 30D Gain/MCap minus Prior Gain/MCap (Early Bull Acceleration)">G/MC Accel</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="impliedCapGainUsd" title="Estimated USD Market Cap gained or lost over selected period">Cap Gain $</th>
-              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="activeCorr" title="Full selected period starting 2026-07-01">Corr (01/07→Now)</th>
+              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="activeCorr" title="Full selected period starting 2026-06-30 (BTC Bottom)">Corr (30/06→Now)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="spearmanLog" title="Full selected period Spearman">Spearman (Full)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="beta">Beta (&beta;)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="rSquared">R&sup2;</th>

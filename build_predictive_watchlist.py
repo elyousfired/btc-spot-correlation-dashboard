@@ -63,7 +63,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">Live Quantitative Watchlist</span>
           </div>
           <h1 class="text-xl md:text-2xl font-bold tracking-tight text-[var(--foreground)]">Next BTC Rally Watchlist: Highest-Probability Followers</h1>
-          <p class="text-sm text-[var(--muted-foreground)] mt-1">Ranks Spot tokens most likely to follow the next BTC surge using 5 empirical factors: Full-Period r (01/07&rarr;Now), Recent 30D Regime r, BTC &ge; +2% Hit Rate (+10%), Upside Beta (&beta;+), and +5% Consistency.</p>
+          <p class="text-sm text-[var(--muted-foreground)] mt-1">Ranks Spot tokens most likely to follow the next BTC surge using 5 empirical factors: Full-Period r (30/06&rarr;Now), Recent 30D Regime r, BTC &ge; +2% Hit Rate (+10%), Upside Beta (&beta;+), and +5% Consistency.</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button id="exportCsvBtn" class="px-3 py-2 rounded-lg text-xs font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90 cursor-pointer">
@@ -151,7 +151,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           </p>
           <ul class="space-y-2 text-xs text-[var(--foreground)]">
             <li class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)]">
-              <strong class="text-blue-400">1. Full-Period Coupling (25 pts):</strong> Correlation from <code>2026-07-01</code> to today ensures structural co-movement.
+              <strong class="text-blue-400">1. Full-Period Coupling (25 pts):</strong> Correlation from <code>2026-06-30</code> (BTC Bottom) to today ensures structural co-movement.
             </li>
             <li class="p-2.5 rounded-lg bg-[var(--background)] border border-[var(--border)]">
               <strong class="text-cyan-400">2. Recent 30D Regime (25 pts):</strong> Guards against tokens that followed in summer but decoupled recently.
