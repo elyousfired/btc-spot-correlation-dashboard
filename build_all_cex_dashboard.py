@@ -273,6 +273,72 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     </footer>
   </div>
 
+  <!-- Interactive Token Price Chart Modal -->
+  <div id="tokenChartModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-6">
+    <div class="bg-[var(--card)] border border-[var(--border)] rounded-2xl w-full max-w-4xl shadow-2xl p-4 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--border)] pb-3">
+        <div class="space-y-1">
+          <div class="flex flex-wrap items-center gap-2">
+            <h3 id="modalTitle" class="text-lg sm:text-xl font-bold text-[var(--foreground)]">--</h3>
+            <span id="modalRankBadge" class="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-500/15 text-blue-400">--</span>
+            <span id="modalExBadges" class="flex items-center gap-1 text-xs"></span>
+          </div>
+          <p id="modalSubtitle" class="text-xs text-[var(--muted-foreground)] tabular-nums">--</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="modalNavPos" class="text-xs text-[var(--muted-foreground)] tabular-nums mr-1"></span>
+          <button id="modalPrevBtn" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] hover:opacity-85 cursor-pointer" title="Previous token (Left Arrow)">&larr; Prev</button>
+          <button id="modalNextBtn" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] hover:opacity-85 cursor-pointer" title="Next token (Right Arrow)">Next &rarr;</button>
+          <button id="closeModalBtn" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 hover:bg-rose-500/25 cursor-pointer" title="Close (Esc)">&#10005;</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 tabular-nums text-xs">
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2.5">
+          <p class="text-[var(--muted-foreground)]">Period Return</p>
+          <p id="modalKpiReturn" class="mt-1 text-sm font-bold">--</p>
+        </div>
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2.5">
+          <p class="text-[var(--muted-foreground)]">Prior &rarr; 30D</p>
+          <p id="modalKpiSplit" class="mt-1 text-sm font-bold">--</p>
+        </div>
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2.5">
+          <p class="text-[var(--muted-foreground)]">Gain / MCap</p>
+          <p id="modalKpiGainMcap" class="mt-1 text-sm font-bold text-violet-400">--</p>
+        </div>
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2.5">
+          <p class="text-[var(--muted-foreground)]">30D G/MC (Accel)</p>
+          <p id="modalKpiAccel" class="mt-1 text-sm font-bold text-fuchsia-400">--</p>
+        </div>
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2.5">
+          <p class="text-[var(--muted-foreground)]">Implied Cap Gain</p>
+          <p id="modalKpiCapGain" class="mt-1 text-sm font-bold text-cyan-400">--</p>
+        </div>
+        <div class="bg-[var(--background)] border border-[var(--border)] rounded-lg p-2.5">
+          <p class="text-[var(--muted-foreground)]">BTC Corr / Beta</p>
+          <p id="modalKpiCorr" class="mt-1 text-sm font-bold">--</p>
+        </div>
+      </div>
+
+      <div class="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h4 class="text-sm font-semibold text-[var(--foreground)]">Daily Spot Price Chart (USDT) &bull; Prior Base vs Recent 30D Window</h4>
+          <span id="modalRangeStats" class="text-xs text-[var(--muted-foreground)] tabular-nums">--</span>
+        </div>
+        <canvas id="modalPriceCanvas" class="w-full h-[320px]"></canvas>
+        <p id="modalHoverInfo" class="text-xs text-[var(--muted-foreground)] mt-2 h-4 tabular-nums">Hover over the price curve to inspect exact daily prices</p>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
+        <span class="text-[var(--muted-foreground)]">Tip: Use Left / Right arrow keys to browse coins in the current ranking.</span>
+        <div class="flex items-center gap-2">
+          <button id="modalJumpDeepBtn" class="px-3 py-1.5 rounded-lg font-medium bg-[var(--background)] text-[var(--foreground)] border border-[var(--border)] hover:opacity-90 cursor-pointer">View BTC Comparison Charts Below</button>
+          <a id="modalTvLink" href="#" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-lg font-medium bg-[var(--primary)] text-[var(--primary-foreground)] hover:opacity-90">Open Live TradingView Chart &nearr;</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
 const RAW = __REPORT_JSON__;
 
@@ -411,6 +477,7 @@ let state = {
   selectedSymbol: 'ETH',
   computedRows: [],
   btcRow: null,
+  lastLeaderboard: [],
   barHitBoxes: [],
   histHitBoxes: [],
 };
@@ -695,6 +762,7 @@ function renderBarChart(alts) {
   }
 
   const maxAbs = Math.max(0.001, ...subset.map(r => Math.abs(modeVal(r))));
+  state.lastLeaderboard = subset;
 
   container.innerHTML = subset.map((r, idx) => {
     const v = modeVal(r);
@@ -726,15 +794,19 @@ function renderBarChart(alts) {
   }).join('');
 
   container.querySelectorAll('[data-symbol]').forEach(el => {
-    el.onclick = () => {
-      const sym = el.getAttribute('data-symbol');
-      state.selectedSymbol = sym;
-      document.getElementById('tokenSelect').value = sym;
-      renderBarChart(getFilteredAlts());
-      renderTable(getFilteredAlts());
-      renderDeepDive();
-    };
+    el.onclick = () => selectToken(el.getAttribute('data-symbol'), true);
   });
+}
+
+function selectToken(sym, showModal = false) {
+  if (!sym || sym === 'BTC') return;
+  state.selectedSymbol = sym;
+  document.getElementById('tokenSelect').value = sym;
+  const alts = getFilteredAlts();
+  renderBarChart(alts);
+  renderTable(alts);
+  renderDeepDive();
+  if (showModal) openTokenChartModal(sym);
 }
 
 function renderTable(alts) {
@@ -798,15 +870,183 @@ function renderTable(alts) {
   tbody.querySelectorAll('tr[data-symbol]').forEach(tr => {
     tr.addEventListener('click', () => {
       const sym = tr.getAttribute('data-symbol');
-      if (sym !== 'BTC') {
-        state.selectedSymbol = sym;
-        document.getElementById('tokenSelect').value = sym;
-        renderBarChart(getFilteredAlts());
-        renderTable(getFilteredAlts());
-        renderDeepDive();
-      }
+      if (sym !== 'BTC') selectToken(sym, true);
     });
   });
+}
+
+function openTokenChartModal(sym) {
+  const tok = state.computedRows.find(r => r.symbol === sym);
+  if (!tok) return;
+
+  const list = state.lastLeaderboard.length ? state.lastLeaderboard : getFilteredAlts();
+  const idx = list.findIndex(r => r.symbol === sym);
+  document.getElementById('modalNavPos').textContent = idx >= 0 ? `#${idx + 1} of ${list.length}` : `${list.length} tokens`;
+  document.getElementById('modalPrevBtn').disabled = idx <= 0;
+  document.getElementById('modalNextBtn').disabled = idx < 0 || idx >= list.length - 1;
+
+  document.getElementById('modalTitle').textContent = `${tok.symbol} (${tok.name})`;
+  document.getElementById('modalRankBadge').textContent = `MCap: ${fmtMcap(tok.marketCap)}${tok.mcap_rank ? ' (#' + tok.mcap_rank + ')' : ''}`;
+  document.getElementById('modalExBadges').innerHTML = [
+    tok.has_binance ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold">BN-Spot</span>' : '',
+    tok.has_bybit ? '<span class="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400 font-semibold">BB-Spot</span>' : '',
+  ].join('');
+  document.getElementById('modalSubtitle').textContent =
+    `Price: ${fmtPrice(tok.endPrice)} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Max DD: ${tok.mddPct.toFixed(1)}%`;
+
+  const retEl = document.getElementById('modalKpiReturn');
+  retEl.textContent = fmtPct(tok.periodReturnPct);
+  retEl.className = `mt-1 text-sm font-bold ${tok.periodReturnPct >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+  document.getElementById('modalKpiSplit').textContent = `${fmtPct(tok.priorRetPct)} → ${fmtPct(tok.recentRetPct)}`;
+  document.getElementById('modalKpiGainMcap').textContent = fmtGainMcap(tok.gainPerMcap);
+  document.getElementById('modalKpiAccel').textContent = `${fmtGainMcap(tok.recentGainPerMcap)} (${fmtGainMcap(tok.gainMcapAccel)})`;
+
+  const cgEl = document.getElementById('modalKpiCapGain');
+  cgEl.textContent = fmtSignedUsd(tok.impliedCapGainUsd);
+  cgEl.className = `mt-1 text-sm font-bold ${(tok.impliedCapGainUsd ?? 0) >= 0 ? 'text-cyan-400' : 'text-rose-400'}`;
+
+  document.getElementById('modalKpiCorr').textContent = `r=${fmtCorr(tok.activeCorr)} | β=${tok.beta != null ? tok.beta.toFixed(2) + 'x' : '--'}`;
+
+  const tvEx = tok.has_binance ? 'BINANCE' : 'BYBIT';
+  document.getElementById('modalTvLink').href = `https://www.tradingview.com/chart/?symbol=${tvEx}:${tok.symbol}USDT`;
+
+  const modal = document.getElementById('tokenChartModal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  requestAnimationFrame(() => drawModalPriceChart(tok));
+}
+
+function closeTokenChartModal() {
+  const modal = document.getElementById('tokenChartModal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+}
+
+function stepModalToken(delta) {
+  const list = state.lastLeaderboard.length ? state.lastLeaderboard : getFilteredAlts();
+  const idx = list.findIndex(r => r.symbol === state.selectedSymbol);
+  const next = idx + delta;
+  if (idx >= 0 && next >= 0 && next < list.length) {
+    selectToken(list[next].symbol, true);
+  }
+}
+
+function drawModalPriceChart(tok) {
+  const canvas = document.getElementById('modalPriceCanvas');
+  const { ctx, w, h } = setupCanvas(canvas, 320);
+  const theme = getThemeColors();
+  ctx.clearRect(0, 0, w, h);
+
+  const prices = tok.tokP;
+  const dates = tok.validDates;
+  const n = prices.length;
+  if (n < 2) return;
+
+  let minP = prices[0], maxP = prices[0], minIdx = 0, maxIdx = 0;
+  for (let i = 1; i < n; i++) {
+    if (prices[i] < minP) { minP = prices[i]; minIdx = i; }
+    if (prices[i] > maxP) { maxP = prices[i]; maxIdx = i; }
+  }
+  const offLow = ((prices[n - 1] / minP) - 1) * 100;
+  const offHigh = ((prices[n - 1] / maxP) - 1) * 100;
+  document.getElementById('modalRangeStats').textContent =
+    `Low: ${fmtPrice(minP)} (${dates[minIdx].slice(5)}) | High: ${fmtPrice(maxP)} (${dates[maxIdx].slice(5)}) | Now vs Low: ${fmtPct(offLow)} | vs High: ${fmtPct(offHigh)}`;
+
+  const padL = 68, padR = 18, padT = 22, padB = 28;
+  const plotW = w - padL - padR, plotH = h - padT - padB;
+  const span = Math.max(1e-12, maxP - minP);
+  const yMin = minP - span * 0.08;
+  const yMax = maxP + span * 0.10;
+  const xOf = i => padL + (i / Math.max(1, n - 1)) * plotW;
+  const yOf = v => padT + ((yMax - v) / (yMax - yMin)) * plotH;
+
+  // Highlight recent 30D split window
+  const splitIdx = Math.max(5, n - Math.min(31, Math.floor(n / 2)));
+  const splitX = xOf(splitIdx);
+  const isBullFlip = (tok.recentRetPct ?? 0) > 0 && (tok.gainMcapAccel ?? 0) > 0;
+  ctx.fillStyle = isBullFlip ? 'rgba(217, 70, 239, 0.10)' : 'rgba(59, 130, 246, 0.08)';
+  ctx.fillRect(splitX, padT, padL + plotW - splitX, plotH);
+
+  // Horizontal grid + price labels
+  ctx.font = '11px sans-serif';
+  for (let k = 0; k <= 4; k++) {
+    const v = yMin + (k / 4) * (yMax - yMin);
+    const y = yOf(v);
+    ctx.strokeStyle = theme.border;
+    ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + plotW, y); ctx.stroke();
+    ctx.fillStyle = theme.muted;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(fmtPrice(v), padL - 6, y);
+  }
+
+  // Split divider line
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = isBullFlip ? '#e879f9' : '#60a5fa';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(splitX, padT); ctx.lineTo(splitX, padT + plotH); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = isBullFlip ? '#e879f9' : '#60a5fa';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`30D Split (${dates[splitIdx].slice(5)})`, Math.min(splitX + 5, padL + plotW - 95), padT + 4);
+
+  // Date ticks
+  ctx.fillStyle = theme.muted;
+  ctx.textBaseline = 'top';
+  [
+    { i: 0, a: 'left' },
+    { i: Math.floor(n / 2), a: 'center' },
+    { i: n - 1, a: 'right' }
+  ].forEach(o => {
+    if (dates[o.i]) { ctx.textAlign = o.a; ctx.fillText(dates[o.i], xOf(o.i), padT + plotH + 8); }
+  });
+
+  // Area gradient fill + price line
+  const lineColor = isBullFlip ? '#e879f9' : (tok.periodReturnPct >= 0 ? '#10b981' : '#f43f5e');
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH);
+  grad.addColorStop(0, isBullFlip ? 'rgba(232, 121, 249, 0.28)' : (tok.periodReturnPct >= 0 ? 'rgba(16, 185, 129, 0.28)' : 'rgba(244, 63, 94, 0.22)'));
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+  ctx.beginPath();
+  prices.forEach((p, i) => { if (i === 0) ctx.moveTo(xOf(i), yOf(p)); else ctx.lineTo(xOf(i), yOf(p)); });
+  ctx.lineTo(xOf(n - 1), padT + plotH);
+  ctx.lineTo(xOf(0), padT + plotH);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  prices.forEach((p, i) => { if (i === 0) ctx.moveTo(xOf(i), yOf(p)); else ctx.lineTo(xOf(i), yOf(p)); });
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2.4;
+  ctx.stroke();
+
+  // Low & High markers
+  [
+    { i: minIdx, v: minP, col: '#f43f5e', lbl: `Low ${fmtPrice(minP)}`, dy: 12 },
+    { i: maxIdx, v: maxP, col: '#10b981', lbl: `High ${fmtPrice(maxP)}`, dy: -12 },
+  ].forEach(pt => {
+    const cx = xOf(pt.i), cy = yOf(pt.v);
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fillStyle = pt.col; ctx.fill();
+    ctx.fillStyle = pt.col;
+    ctx.textAlign = pt.i > n * 0.75 ? 'right' : pt.i < n * 0.25 ? 'left' : 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(pt.lbl, cx, Math.max(padT + 8, Math.min(padT + plotH - 8, cy + pt.dy)));
+  });
+
+  canvas.onmousemove = e => {
+    const rect = canvas.getBoundingClientRect();
+    const idx = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - rect.left - padL) / plotW) * (n - 1))));
+    const p = prices[idx];
+    const fromStart = ((p / prices[0]) - 1) * 100;
+    const fromSplit = ((p / prices[splitIdx]) - 1) * 100;
+    document.getElementById('modalHoverInfo').textContent =
+      `${dates[idx]} | Price: ${fmtPrice(p)} | From Start: ${fmtPct(fromStart)} | vs 30D Split: ${fmtPct(fromSplit)}`;
+  };
 }
 
 function renderDeepDive() {
@@ -1029,7 +1269,31 @@ function initUI() {
     };
   });
 
-  window.onresize = () => renderAll();
+  document.getElementById('closeModalBtn').onclick = closeTokenChartModal;
+  document.getElementById('modalPrevBtn').onclick = () => stepModalToken(-1);
+  document.getElementById('modalNextBtn').onclick = () => stepModalToken(1);
+  document.getElementById('modalJumpDeepBtn').onclick = () => {
+    closeTokenChartModal();
+    document.getElementById('deepDiveTitle').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  document.getElementById('tokenChartModal').onclick = e => {
+    if (e.target.id === 'tokenChartModal') closeTokenChartModal();
+  };
+  window.addEventListener('keydown', e => {
+    const modalOpen = !document.getElementById('tokenChartModal').classList.contains('hidden');
+    if (!modalOpen) return;
+    if (e.key === 'Escape') closeTokenChartModal();
+    else if (e.key === 'ArrowLeft') stepModalToken(-1);
+    else if (e.key === 'ArrowRight') stepModalToken(1);
+  });
+
+  window.onresize = () => {
+    renderAll();
+    if (!document.getElementById('tokenChartModal').classList.contains('hidden')) {
+      const tok = state.computedRows.find(r => r.symbol === state.selectedSymbol);
+      if (tok) drawModalPriceChart(tok);
+    }
+  };
 }
 
 recomputeAll();
