@@ -156,6 +156,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <option value="LOWEST_CORR">All Tokens: Least Correlated / Negative</option>
             <option value="HIGHEST_BETA">All Tokens: Highest Beta (&beta;)</option>
             <option value="TOP_RETURN">All Tokens: Period Return %</option>
+            <option value="GAIN_PER_MCAP">All Tokens: Gain % / MCap ($M)</option>
           </select>
         </div>
         <div id="barListContainer" class="h-[390px] overflow-y-auto pr-2 space-y-1 tabular-nums"></div>
@@ -238,9 +239,11 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
               <th class="py-2 px-2 font-semibold cursor-pointer" data-sort="mcapRank">MCap #</th>
               <th class="py-2 px-2 font-semibold cursor-pointer" data-sort="symbol">Token</th>
               <th class="py-2 px-2 font-semibold">Exchanges</th>
+              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="marketCap" title="CoinGecko Market Cap (USD)">MCap</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="nDays">Days</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="endPrice">Price (USDT)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="periodReturnPct">Return %</th>
+              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="gainPerMcap" title="Period Return % divided by Market Cap in $M">Gain / MCap</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="activeCorr" title="Full selected period starting 2026-07-01">Corr (01/07→Now)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="spearmanLog" title="Full selected period Spearman">Spearman (Full)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="beta">Beta (&beta;)</th>
@@ -333,6 +336,17 @@ function fmtPrice(p) {
 }
 function fmtPct(v) { return v == null ? '--' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
 function fmtCorr(v) { return v == null ? '--' : (v >= 0 ? '+' : '') + v.toFixed(3); }
+function fmtMcap(v) {
+  if (v == null || v <= 0) return '--';
+  if (v >= 1e9) return '$' + (v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+  return '$' + (v / 1e3).toFixed(0) + 'K';
+}
+function fmtGainMcap(v) {
+  if (v == null) return '--';
+  const dec = Math.abs(v) >= 0.01 ? 3 : 4;
+  return (v >= 0 ? '+' : '') + v.toFixed(dec) + '%/M';
+}
 
 function getThemeColors() {
   const cs = getComputedStyle(document.documentElement);
@@ -432,11 +446,15 @@ function recomputeAll() {
     const varR = tokLog.reduce((a, b) => a + (b - meanR) ** 2, 0) / Math.max(1, tokLog.length - 1);
     const annVolPct = Math.sqrt(varR * 365) * 100;
     const periodReturnPct = ((tokP[tokP.length - 1] - tokP[0]) / tokP[0]) * 100;
+    const marketCap = (meta.market_cap && meta.market_cap > 0) ? meta.market_cap : null;
+    const gainPerMcap = marketCap ? (periodReturnPct / (marketCap / 1e6)) : null;
     const mddPct = maxDrawdown(tokP) * 100;
 
     rows.push({
       ...meta,
       mcapRank: meta.mcap_rank ?? 999999,
+      marketCap,
+      gainPerMcap,
       nDays: tokP.length,
       fullHistory: tokP.length >= winDates.length - 2,
       validDates,
@@ -605,23 +623,33 @@ function renderBarChart(alts) {
     subset.sort((a, b) => b.periodReturnPct - a.periodReturnPct);
     modeVal = r => r.periodReturnPct;
     fmtFn = fmtPct;
+  } else if (state.rankMode === 'GAIN_PER_MCAP') {
+    subset = subset.filter(r => r.gainPerMcap != null);
+    subset.sort((a, b) => b.gainPerMcap - a.gainPerMcap);
+    modeVal = r => r.gainPerMcap;
+    fmtFn = fmtGainMcap;
   }
 
-  document.getElementById('leaderboardSub').textContent = `Showing all ${subset.length} filtered tokens (scroll to browse)`;
+  document.getElementById('leaderboardSub').textContent = state.rankMode === 'GAIN_PER_MCAP'
+    ? `Showing ${subset.length} tokens with known Market Cap (Period Return % / MCap $M)`
+    : `Showing all ${subset.length} filtered tokens (scroll to browse)`;
   if (!subset.length) {
     container.innerHTML = '<div class="text-xs text-[var(--muted-foreground)] py-8 text-center">No tokens match filters</div>';
     return;
   }
 
-  const maxAbs = Math.max(0.2, ...subset.map(r => Math.abs(modeVal(r))));
+  const maxAbs = Math.max(0.001, ...subset.map(r => Math.abs(modeVal(r))));
 
   container.innerHTML = subset.map((r, idx) => {
     const v = modeVal(r);
     const pct = Math.min(100, Math.max(2, (Math.abs(v) / maxAbs) * 100));
     const isSel = r.symbol === state.selectedSymbol;
-    const barColor = v < 0 ? 'bg-rose-500' : state.rankMode === 'LOWEST_CORR' ? 'bg-amber-500' : 'bg-emerald-500';
+    const barColor = v < 0 ? 'bg-rose-500' : state.rankMode === 'LOWEST_CORR' ? 'bg-amber-500' : state.rankMode === 'GAIN_PER_MCAP' ? 'bg-violet-500' : 'bg-emerald-500';
     const rowBg = isSel ? 'bg-blue-500/20 border-blue-500/40' : 'hover:bg-[var(--secondary)]/50 border-transparent';
     const valColor = v < 0 ? 'text-rose-400' : 'text-[var(--foreground)]';
+    const subTag = state.rankMode === 'GAIN_PER_MCAP'
+      ? `<span class="w-28 text-right text-[11px] text-[var(--muted-foreground)] shrink-0">${fmtPct(r.periodReturnPct)} / ${fmtMcap(r.marketCap)}</span>`
+      : '';
 
     return `<div data-symbol="${r.symbol}" class="flex items-center gap-2 px-2 py-1 rounded border ${rowBg} cursor-pointer text-xs">
       <span class="w-9 text-right text-[var(--muted-foreground)] shrink-0">#${idx + 1}</span>
@@ -629,7 +657,8 @@ function renderBarChart(alts) {
       <div class="flex-1 h-3.5 bg-[var(--background)] rounded overflow-hidden">
         <div class="${barColor} h-full rounded" style="width:${pct.toFixed(1)}%"></div>
       </div>
-      <span class="w-20 text-right font-medium ${valColor} shrink-0">${fmtFn(v)}</span>
+      ${subTag}
+      <span class="w-24 text-right font-medium ${valColor} shrink-0">${fmtFn(v)}</span>
     </div>`;
   }).join('');
 
@@ -651,7 +680,10 @@ function renderTable(alts) {
     const va = a[k], vb = b[k];
     if (typeof va === 'string') return state.sortDesc ? vb.localeCompare(va) : va.localeCompare(vb);
     if (k === 'mcapRank') return state.sortDesc ? (va - vb) : (vb - va);
-    return state.sortDesc ? ((vb ?? -999) - (va ?? -999)) : ((va ?? 999) - (vb ?? 999));
+    if (va == null && vb == null) return 0;
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return state.sortDesc ? (vb - va) : (va - vb);
   });
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / state.pageSize));
@@ -682,9 +714,11 @@ function renderTable(alts) {
       <td class="py-2 px-2 text-[var(--muted-foreground)]">${r.mcap_rank ? '#' + r.mcap_rank : '--'}</td>
       <td class="py-2 px-2"><span class="font-semibold text-[var(--foreground)]">${r.symbol}</span> <span class="text-[var(--muted-foreground)]">${r.name !== r.symbol ? r.name.slice(0, 16) : ''}</span></td>
       <td class="py-2 px-2">${exBadges}</td>
+      <td class="py-2 px-2 text-right text-[var(--muted-foreground)]">${fmtMcap(r.marketCap)}</td>
       <td class="py-2 px-2 text-right">${r.nDays}d</td>
       <td class="py-2 px-2 text-right">${fmtPrice(r.endPrice)}</td>
       <td class="py-2 px-2 text-right ${retColor}">${fmtPct(r.periodReturnPct)}</td>
+      <td class="py-2 px-2 text-right ${r.gainPerMcap != null && r.gainPerMcap > 0 ? 'text-violet-400 font-medium' : r.gainPerMcap != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtGainMcap(r.gainPerMcap)}</td>
       <td class="py-2 px-2 text-right ${isBtc ? '' : corrColor}">${fmtCorr(r.activeCorr)}</td>
       <td class="py-2 px-2 text-right">${fmtCorr(r.spearmanLog)}</td>
       <td class="py-2 px-2 text-right">${r.beta != null ? r.beta.toFixed(2) : '--'}</td>
@@ -715,7 +749,7 @@ function renderDeepDive() {
 
   document.getElementById('deepDiveTitle').textContent = `Token Deep-Dive: BTC vs ${tok.symbol} (${tok.name})`;
   document.getElementById('deepDiveSub').textContent =
-    `${tok.exchanges.join(' · ')} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Pearson r=${fmtCorr(tok.pearsonLog)} | Beta=${tok.beta?.toFixed(2) ?? '--'} | Ret: ${fmtPct(tok.periodReturnPct)}`;
+    `${tok.exchanges.join(' · ')} | MCap=${fmtMcap(tok.marketCap)} | Gain/MCap=${fmtGainMcap(tok.gainPerMcap)} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Pearson r=${fmtCorr(tok.pearsonLog)} | Beta=${tok.beta?.toFixed(2) ?? '--'} | Ret: ${fmtPct(tok.periodReturnPct)}`;
   document.getElementById('perfLegendToken').textContent = tok.symbol;
   document.getElementById('scatterStatsBadge').textContent = `β = ${tok.beta?.toFixed(2) ?? '--'} | R² = ${tok.rSquared != null ? (tok.rSquared * 100).toFixed(1) + '%' : '--'}`;
 
@@ -947,6 +981,7 @@ def main():
             "symbol": t["symbol"],
             "name": t["name"],
             "mcap_rank": t["mcap_rank"],
+            "market_cap": t.get("market_cap"),
             "is_stable": t["is_stable"],
             "exchanges": t["exchanges"],
             "has_binance": t["has_binance"],
