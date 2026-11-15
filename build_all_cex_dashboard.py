@@ -157,6 +157,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
             <option value="HIGHEST_BETA">All Tokens: Highest Beta (&beta;)</option>
             <option value="TOP_RETURN">All Tokens: Period Return %</option>
             <option value="GAIN_PER_MCAP">All Tokens: Gain % / MCap ($M)</option>
+            <option value="IMPLIED_CAP_GAIN">All Tokens: Implied Cap Gain ($)</option>
           </select>
         </div>
         <div id="barListContainer" class="h-[390px] overflow-y-auto pr-2 space-y-1 tabular-nums"></div>
@@ -244,6 +245,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="endPrice">Price (USDT)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="periodReturnPct">Return %</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="gainPerMcap" title="Period Return % divided by Market Cap in $M">Gain / MCap</th>
+              <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="impliedCapGainUsd" title="Estimated USD Market Cap gained or lost over selected period">Cap Gain $</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="activeCorr" title="Full selected period starting 2026-07-01">Corr (01/07→Now)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="spearmanLog" title="Full selected period Spearman">Spearman (Full)</th>
               <th class="py-2 px-2 font-semibold text-right cursor-pointer" data-sort="beta">Beta (&beta;)</th>
@@ -347,6 +349,15 @@ function fmtGainMcap(v) {
   const dec = Math.abs(v) >= 0.01 ? 3 : 4;
   return (v >= 0 ? '+' : '') + v.toFixed(dec) + '%/M';
 }
+function fmtSignedUsd(v) {
+  if (v == null) return '--';
+  const sign = v >= 0 ? '+' : '-';
+  const a = Math.abs(v);
+  if (a >= 1e9) return sign + '$' + (a / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return sign + '$' + (a / 1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return sign + '$' + (a / 1e3).toFixed(0) + 'K';
+  return sign + '$' + a.toFixed(0);
+}
 
 function getThemeColors() {
   const cs = getComputedStyle(document.documentElement);
@@ -448,6 +459,13 @@ function recomputeAll() {
     const periodReturnPct = ((tokP[tokP.length - 1] - tokP[0]) / tokP[0]) * 100;
     const marketCap = (meta.market_cap && meta.market_cap > 0) ? meta.market_cap : null;
     const gainPerMcap = marketCap ? (periodReturnPct / (marketCap / 1e6)) : null;
+    let lastFullPrice = null;
+    for (let j = arr.length - 1; j >= 0; j--) {
+      if (arr[j] != null && arr[j] > 0) { lastFullPrice = arr[j]; break; }
+    }
+    const impliedCapGainUsd = (marketCap && lastFullPrice)
+      ? marketCap * ((tokP[tokP.length - 1] - tokP[0]) / lastFullPrice)
+      : null;
     const mddPct = maxDrawdown(tokP) * 100;
 
     rows.push({
@@ -455,6 +473,7 @@ function recomputeAll() {
       mcapRank: meta.mcap_rank ?? 999999,
       marketCap,
       gainPerMcap,
+      impliedCapGainUsd,
       nDays: tokP.length,
       fullHistory: tokP.length >= winDates.length - 2,
       validDates,
@@ -628,10 +647,17 @@ function renderBarChart(alts) {
     subset.sort((a, b) => b.gainPerMcap - a.gainPerMcap);
     modeVal = r => r.gainPerMcap;
     fmtFn = fmtGainMcap;
+  } else if (state.rankMode === 'IMPLIED_CAP_GAIN') {
+    subset = subset.filter(r => r.impliedCapGainUsd != null);
+    subset.sort((a, b) => b.impliedCapGainUsd - a.impliedCapGainUsd);
+    modeVal = r => r.impliedCapGainUsd;
+    fmtFn = fmtSignedUsd;
   }
 
   document.getElementById('leaderboardSub').textContent = state.rankMode === 'GAIN_PER_MCAP'
     ? `Showing ${subset.length} tokens with known Market Cap (Period Return % / MCap $M)`
+    : state.rankMode === 'IMPLIED_CAP_GAIN'
+    ? `Showing ${subset.length} tokens by estimated USD Cap Gain (${state.startDate} → ${state.endDate})`
     : `Showing all ${subset.length} filtered tokens (scroll to browse)`;
   if (!subset.length) {
     container.innerHTML = '<div class="text-xs text-[var(--muted-foreground)] py-8 text-center">No tokens match filters</div>';
@@ -644,10 +670,14 @@ function renderBarChart(alts) {
     const v = modeVal(r);
     const pct = Math.min(100, Math.max(2, (Math.abs(v) / maxAbs) * 100));
     const isSel = r.symbol === state.selectedSymbol;
-    const barColor = v < 0 ? 'bg-rose-500' : state.rankMode === 'LOWEST_CORR' ? 'bg-amber-500' : state.rankMode === 'GAIN_PER_MCAP' ? 'bg-violet-500' : 'bg-emerald-500';
+    const barColor = v < 0 ? 'bg-rose-500'
+      : state.rankMode === 'LOWEST_CORR' ? 'bg-amber-500'
+      : state.rankMode === 'GAIN_PER_MCAP' ? 'bg-violet-500'
+      : state.rankMode === 'IMPLIED_CAP_GAIN' ? 'bg-cyan-500'
+      : 'bg-emerald-500';
     const rowBg = isSel ? 'bg-blue-500/20 border-blue-500/40' : 'hover:bg-[var(--secondary)]/50 border-transparent';
     const valColor = v < 0 ? 'text-rose-400' : 'text-[var(--foreground)]';
-    const subTag = state.rankMode === 'GAIN_PER_MCAP'
+    const subTag = (state.rankMode === 'GAIN_PER_MCAP' || state.rankMode === 'IMPLIED_CAP_GAIN')
       ? `<span class="w-28 text-right text-[11px] text-[var(--muted-foreground)] shrink-0">${fmtPct(r.periodReturnPct)} / ${fmtMcap(r.marketCap)}</span>`
       : '';
 
@@ -719,6 +749,7 @@ function renderTable(alts) {
       <td class="py-2 px-2 text-right">${fmtPrice(r.endPrice)}</td>
       <td class="py-2 px-2 text-right ${retColor}">${fmtPct(r.periodReturnPct)}</td>
       <td class="py-2 px-2 text-right ${r.gainPerMcap != null && r.gainPerMcap > 0 ? 'text-violet-400 font-medium' : r.gainPerMcap != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtGainMcap(r.gainPerMcap)}</td>
+      <td class="py-2 px-2 text-right ${r.impliedCapGainUsd != null && r.impliedCapGainUsd > 0 ? 'text-cyan-400 font-medium' : r.impliedCapGainUsd != null ? 'text-rose-400' : 'text-[var(--muted-foreground)]'}">${fmtSignedUsd(r.impliedCapGainUsd)}</td>
       <td class="py-2 px-2 text-right ${isBtc ? '' : corrColor}">${fmtCorr(r.activeCorr)}</td>
       <td class="py-2 px-2 text-right">${fmtCorr(r.spearmanLog)}</td>
       <td class="py-2 px-2 text-right">${r.beta != null ? r.beta.toFixed(2) : '--'}</td>
@@ -749,7 +780,7 @@ function renderDeepDive() {
 
   document.getElementById('deepDiveTitle').textContent = `Token Deep-Dive: BTC vs ${tok.symbol} (${tok.name})`;
   document.getElementById('deepDiveSub').textContent =
-    `${tok.exchanges.join(' · ')} | MCap=${fmtMcap(tok.marketCap)} | Gain/MCap=${fmtGainMcap(tok.gainPerMcap)} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Pearson r=${fmtCorr(tok.pearsonLog)} | Beta=${tok.beta?.toFixed(2) ?? '--'} | Ret: ${fmtPct(tok.periodReturnPct)}`;
+    `${tok.exchanges.join(' · ')} | MCap=${fmtMcap(tok.marketCap)} | Gain/MCap=${fmtGainMcap(tok.gainPerMcap)} | CapGain=${fmtSignedUsd(tok.impliedCapGainUsd)} | ${tok.nDays}d (${tok.validDates[0]} → ${tok.validDates[tok.validDates.length - 1]}) | Pearson r=${fmtCorr(tok.pearsonLog)} | Beta=${tok.beta?.toFixed(2) ?? '--'} | Ret: ${fmtPct(tok.periodReturnPct)}`;
   document.getElementById('perfLegendToken').textContent = tok.symbol;
   document.getElementById('scatterStatsBadge').textContent = `β = ${tok.beta?.toFixed(2) ?? '--'} | R² = ${tok.rSquared != null ? (tok.rSquared * 100).toFixed(1) + '%' : '--'}`;
 
